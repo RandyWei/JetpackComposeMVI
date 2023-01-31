@@ -6,33 +6,53 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import icu.bughub.app.todo.actions.ListAction
 import icu.bughub.app.todo.entity.Todo
 import icu.bughub.app.todo.service.TodoDao
 import icu.bughub.app.todo.service.TodoService
+import icu.bughub.app.todo.uistate.ListUIState
+import icu.bughub.app.todo.uistate.ToastEffect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 class ListViewModel(dao: TodoDao) : ViewModel() {
 
-    //数据列表
-    var list by mutableStateOf<List<Todo>>(listOf())
+    //MVI
+    //Model： ViewModel + Service + 状态
+    //View: UI
+    //Intent: 意图（动作），其实这里应该叫 Action，
+
+    var uiState by mutableStateOf<ListUIState>(ListUIState.Loading)
         private set
 
     //toast 内容
-    private val toastContent = MutableSharedFlow<String>()
-    val toast = toastContent.asSharedFlow()
-
-    //loading 状态
-    var loading by mutableStateOf(true)
+    private val _toast = MutableSharedFlow<ToastEffect>()
+    val toast = _toast.asSharedFlow()
 
     private val service = TodoService(dao)
 
-    fun fetchList() {
+
+    /**
+     * UI 所有意图都通过调度方法调用 ViewModel逻辑
+     * 其中教程里面，有可能这里使用了 Channel 通道进行通信
+     * @param action
+     */
+    fun dispatch(action: ListAction) {
+        when (action) {
+            is ListAction.Done -> done(action.todo, action.done)
+            ListAction.FetchList -> fetchList()
+        }
+    }
+
+    private fun fetchList() {
         viewModelScope.launch {
-            loading = true
-            list = service.getAll()
-            loading = false
+            val list = service.getAll()
+            uiState = if (list.isEmpty()) {
+                ListUIState.Error("暂无待办事项")
+            } else {
+                ListUIState.Success(list)
+            }
         }
     }
 
@@ -42,14 +62,29 @@ class ListViewModel(dao: TodoDao) : ViewModel() {
      * @param item 待办对象
      * @param it 状态
      */
-    fun done(item: Todo, it: Boolean) {
+    private fun done(item: Todo, it: Boolean) {
         viewModelScope.launch {
-            list = list.map { todo ->
+
+            val list = (uiState as ListUIState.Success).list.map { todo ->
                 var new = todo
                 if (todo.id == item.id) new = todo.copy(done = it)
                 new
             }
-            toastContent.emit("${item.content.substring(0, minOf(8, item.content.length))}事项完成")
+
+            uiState = ListUIState.Success(list)
+
+            if (it) {
+                _toast.emit(
+                    ToastEffect.Message(
+                        "${
+                            item.content.substring(
+                                0,
+                                minOf(8, item.content.length)
+                            )
+                        }事项完成"
+                    )
+                )
+            }
         }
     }
 }

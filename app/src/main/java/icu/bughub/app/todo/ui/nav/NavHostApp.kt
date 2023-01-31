@@ -42,7 +42,7 @@ sealed class Destinations(val route: String) {
     object List : Destinations("List")
 
     //详情页
-    data class Editor(val id: String) : Destinations("Editor$/$id")
+    data class Editor(val id: String) : Destinations("Editor/$id")
 }
 
 sealed class Params(val key: String) {

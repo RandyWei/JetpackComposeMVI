@@ -20,7 +20,10 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import icu.bughub.app.todo.actions.ListAction
 import icu.bughub.app.todo.ui.components.TodoItem
+import icu.bughub.app.todo.uistate.ListUIState
+import icu.bughub.app.todo.uistate.ToastEffect
 import icu.bughub.app.todo.viewmodel.ListViewModel
 import icu.bughub.app.todo.viewmodel.factory.TodoViewModelFactory
 import kotlinx.coroutines.flow.collect
@@ -37,9 +40,11 @@ fun ListScreen(onNavigateToEditor: (String) -> Unit) {
     // 3、通过使用 Hilt 依赖注入
     val listViewModel: ListViewModel = viewModel(factory = TodoViewModelFactory(context))
 
+    val uiState = listViewModel.uiState
+
     LaunchedEffect(key1 = Unit) {
         //获取列表数据
-        listViewModel.fetchList()
+        listViewModel.dispatch(ListAction.FetchList)
     }
 
 
@@ -52,12 +57,12 @@ fun ListScreen(onNavigateToEditor: (String) -> Unit) {
 
         //设置只有在STARTED生命周期之后才执行
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-
             toast.collect {
-
-                Log.i("ListScreen", it)
-
-                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                when (it) {
+                    is ToastEffect.Message -> {
+                        Toast.makeText(context, it.content, Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
 
@@ -69,22 +74,14 @@ fun ListScreen(onNavigateToEditor: (String) -> Unit) {
         })
     }, floatingActionButton = {
         FloatingActionButton(onClick = {
-            onNavigateToEditor("")
+            onNavigateToEditor("0")
         }) {
             Icon(imageVector = Icons.Default.Add, contentDescription = null)
         }
     }) {
 
-        if (listViewModel.loading) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            if (listViewModel.list.isEmpty()) {
+        when (uiState) {
+            is ListUIState.Error -> {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -92,12 +89,21 @@ fun ListScreen(onNavigateToEditor: (String) -> Unit) {
                 ) {
                     Text(text = "暂无待办事项")
                 }
-            } else {
+            }
+            ListUIState.Loading -> {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+            is ListUIState.Success -> {
                 LazyColumn() {
-                    items(listViewModel.list) { item ->
-
+                    items(uiState.list) { item ->
                         TodoItem(todo = item, onCheckedChange = {
-                            listViewModel.done(item, it)
+                            listViewModel.dispatch(ListAction.Done(item, it))
                         }, modifier = Modifier.clickable {
                             onNavigateToEditor(item.id)
                         })
@@ -106,8 +112,6 @@ fun ListScreen(onNavigateToEditor: (String) -> Unit) {
                 }
             }
         }
-
-
     }
 
 }
